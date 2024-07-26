@@ -65,12 +65,14 @@ internal sealed class MergeCommand
 
         var normalAsset = assets.First();
 
+        HttpClient _httpClient = new HttpClient();
+        
         foreach (AssetTypeValueField asset in othersToAdd)
         {
             string hash = asset["hash"].AsString;
             string assetPath = GetAssetPath(hash);
             // TODO multiple paths support again
-            FileInfo bundleToAddPath = GetSourceFile(assetPath, assetDirectories);
+            FileInfo bundleToAddPath = GetSourceFile(assetPath, assetDirectories, _httpClient);
 
             using AssetBundleHelper openedBundle = AssetBundleHelper.FromPath(
                 bundleToAddPath.FullName
@@ -206,7 +208,20 @@ internal sealed class MergeCommand
             }
         }
 
-        throw new IOException($"Failed to find asset {assetPath} in any configured directory");
+        ConsoleApp.Log($"{assetPath} not found in any specified directory. Attempting download.");
+        Directory.CreateDirectory($"./Repository/{assetPath[..2]}/");
+        
+        using HttpRequestMessage request = new();
+		request.Method = HttpMethod.Get;
+		request.RequestUri = new($"https://cdn.minty.sbs/dl/assetbundles/universe/{assetPath[..2]}/{assetPath[3..]}");
+
+		using HttpResponseMessage response = _httpClient.Send(request);
+		response.EnsureSuccessStatusCode();
+
+		using FileStream saveFs = File.OpenWrite($"./Repository/{assetPath}");
+		response.Content.CopyTo(saveFs, null, CancellationToken.None);
+
+        throw new IOException($"Failed to find or download asset {assetPath}.");
     }
 
     private static void PopulateAssetArray(
